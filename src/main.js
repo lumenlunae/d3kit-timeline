@@ -12,7 +12,7 @@ const identity = d => d;
 class Timeline extends SvgChart {
   static getDefaultOptions() {
     return helper.deepExtend(super.getDefaultOptions(), {
-      margin: {left: 40, right: 20, top: 20, bottom: 20},
+      margin: { left: 40, right: 20, top: 20, bottom: 20 },
       initialWidth: 400,
       initialHeight: 400,
       scale: scaleTime(),
@@ -24,13 +24,19 @@ class Timeline extends SvgChart {
       labella: {},
       keyFn: undefined,
       timeFn: d => d.time,
+      endTimeFn: d => d.end_time,
       textFn: d => d.text,
+      offsetFn: d => d.offset,
+      offsetTangentFn: d => d.offsetTangent,
+      textOffsetFn: d => d.textOffset,
+      endDotColor: '#009900',
       dotColor: '#222',
       labelBgColor: '#222',
       labelTextColor: '#fff',
+      lineColor: '#222',
       linkColor: '#222',
-      labelPadding: {left: 4, right: 4, top: 3, bottom: 2},
-      textYOffset: '0.85em'
+      labelPadding: { left: 4, right: 4, top: 3, bottom: 2 },
+      textYOffset: '0.85em',
     });
   }
 
@@ -47,14 +53,14 @@ class Timeline extends SvgChart {
       'labelMousemove',
       'labelMouseenter',
       'labelMouseleave',
-      'labelMouseout'
+      'labelMouseout',
     ];
   }
 
   constructor(element, options) {
     super(element, options);
 
-    this.layers.create(['dummy', {main:['axis', 'link', 'label', 'dot']}]);
+    this.layers.create(['dummy', { main: ['axis', 'link', 'label', 'dot'] }]);
     this.layers.get('main/axis').classed('axis', true);
 
     this.force = new labella.Force(options.labella);
@@ -66,12 +72,12 @@ class Timeline extends SvgChart {
     this.on('resize', this.visualize);
   }
 
-  resizeToFit(){
+  resizeToFit() {
     const options = this.options();
     let maxVal;
     const nodes = this.force.nodes();
 
-    switch(options.direction){
+    switch (options.direction) {
       case 'up':
         maxVal = max(nodes, d => Math.abs(d.y)) || 0;
         this.height(maxVal + options.margin.top + options.margin.bottom);
@@ -93,7 +99,7 @@ class Timeline extends SvgChart {
     return this;
   }
 
-  updateLabelText(selection, textStyle, accessor){
+  updateLabelText(selection, textStyle, accessor) {
     const options = this.options();
 
     accessor = accessor ? helper.functor(accessor) : identity;
@@ -104,9 +110,9 @@ class Timeline extends SvgChart {
       .attr('x', options.labelPadding.left)
       .attr('y', options.labelPadding.top);
 
-    Object.keys(textStyle).forEach(key => {
+    Object.keys(textStyle).forEach((key) => {
       const styleFn = textStyle[key];
-      selection.style(key, (d,i) => styleFn(accessor(d),i));
+      selection.style(key, (d, i) => styleFn(accessor(d), i));
     });
 
     return selection;
@@ -117,27 +123,26 @@ class Timeline extends SvgChart {
 
     let axisTransform;
 
-    switch(options.direction){
+    switch (options.direction) {
       case 'right':
         this.axis = axisLeft();
-        axisTransform = 'translate('+(0)+','+(0)+')';
+        axisTransform = `translate(${0},${0})`;
         break;
       case 'left':
         this.axis = axisRight();
-        axisTransform ='translate('+(this.getInnerWidth())+','+(0)+')';
+        axisTransform = `translate(${this.getInnerWidth()},${0})`;
         break;
       case 'up':
         this.axis = axisBottom();
-        axisTransform ='translate('+(0)+','+(this.getInnerHeight())+')';
+        axisTransform = `translate(${0},${this.getInnerHeight()})`;
         break;
       case 'down':
         this.axis = axisTop();
-        axisTransform = 'translate('+(0)+','+(0)+')';
+        axisTransform = `translate(${0},${0})`;
         break;
     }
 
-    this.layers.get('main')
-      .attr('transform', axisTransform);
+    this.layers.get('main').attr('transform', axisTransform);
 
     const formatAxis = options.formatAxis || identity;
 
@@ -152,27 +157,116 @@ class Timeline extends SvgChart {
     const options = this.options();
     const timePos = d => options.scale(options.timeFn(d));
 
-    const sUpdate = this.layers.get('main/dot').selectAll('circle.dot')
+    const sUpdate = this.layers
+      .get('main/dot')
+      .selectAll('circle.dot')
       .data(data, options.keyFn);
 
-    const field = (options.direction==='left' || options.direction==='right') ? 'cy' : 'cx';
+    const field = options.direction === 'left' || options.direction === 'right' ? 'cy' : 'cx';
+    const oppositeField = field === 'cy' ? 'cx' : 'cy';
 
-    sUpdate.enter().append('circle')
-      .classed('dot', true)
-      .on('click', this.dispatchAs('dotClick'))
-      .on('mouseover', this.dispatchAs('dotMouseover'))
-      .on('mousemove', this.dispatchAs('dotMousemove'))
-      .on('mouseout', this.dispatchAs('dotMouseout'))
-      .on('mouseenter', this.dispatchAs('dotMouseenter'))
-      .on('mouseleave', this.dispatchAs('dotMouseleave'))
-      .style('fill', options.dotColor)
-      .attr('r', options.dotRadius)
-      .attr(field, timePos);
+    const fieldAxis = field === 'cy' ? 'x' : 'y';
+    const oppositeFieldAxis = field === 'cy' ? 'y' : 'x';
+    if (options.dotColor === 'transparent') {
+      sUpdate
+        .enter()
+        .append('rect')
+        .classed('dot', true)
+        .style('stroke', options.lineColor)
+        .attr(fieldAxis, d => options.offsetFn(d))
+        .attr(oppositeFieldAxis, d => timePos(d) + options.offsetTangentFn(d))
+        .attr('width', options.dotRadius)
+        .attr('height', 1);
 
-    sUpdate.transition()
-      .style('fill', options.dotColor)
-      .attr('r', options.dotRadius)
-      .attr(field, timePos);
+      sUpdate
+        .transition()
+        .style('stroke', options.lineColor)
+        .attr(fieldAxis, d => options.offsetFn(d))
+        .attr(oppositeFieldAxis, d => timePos(d) + options.offsetTangentFn(d))
+        .attr('width', options.dotRadius)
+        .attr('height', 1);
+    } else {
+      sUpdate
+        .enter()
+        .append('circle')
+        .classed('dot', true)
+        .on('click', this.dispatchAs('dotClick'))
+        .on('mouseover', this.dispatchAs('dotMouseover'))
+        .on('mousemove', this.dispatchAs('dotMousemove'))
+        .on('mouseout', this.dispatchAs('dotMouseout'))
+        .on('mouseenter', this.dispatchAs('dotMouseenter'))
+        .on('mouseleave', this.dispatchAs('dotMouseleave'))
+        .style('fill', options.dotColor)
+        .attr('r', options.dotRadius)
+        .attr(field, d => timePos(d) + options.offsetTangentFn(d))
+        .attr(oppositeField, d => options.offsetFn(d));
+
+      sUpdate
+        .transition()
+        .style('fill', options.dotColor)
+        .attr('r', options.dotRadius)
+        .attr(field, d => timePos(d) + options.offsetTangentFn(d))
+        .attr(oppositeField, d => options.offsetFn(d));
+    }
+    /*
+
+*/
+    if (options.endTimeFn) {
+      const endTimePos = d => options.scale(options.endTimeFn(d));
+
+      if (options.endDotColor === 'transparent') {
+        sUpdate
+          .enter()
+          .append('rect')
+          .classed('dot', true)
+          .style('stroke', options.lineColor)
+          .attr(fieldAxis, d => options.offsetFn(d))
+          .attr(oppositeFieldAxis, d => endTimePos(d) + options.offsetTangentFn(d))
+          .attr('width', options.dotRadius)
+          .attr('height', 1);
+
+        sUpdate
+          .transition()
+          .style('stroke', options.lineColor)
+          .attr(fieldAxis, d => options.offsetFn(d))
+          .attr(oppositeFieldAxis, d => endTimePos(d) + options.offsetTangentFn(d))
+          .attr('width', options.dotRadius)
+          .attr('height', 1);
+      } else {
+        sUpdate
+          .enter()
+          .append('circle')
+          .classed('dot', true)
+          .style('fill', options.endDotColor)
+          .attr('r', options.dotRadius)
+          .attr(field, d => endTimePos(d) + options.offsetTangentFn(d))
+          .attr(oppositeField, d => options.offsetFn(d));
+
+        sUpdate
+          .transition()
+          .style('fill', options.endDotColor)
+          .attr('r', options.dotRadius)
+          .attr(field, d => endTimePos(d) + options.offsetTangentFn(d))
+          .attr(oppositeField, d => options.offsetFn(d));
+      }
+      sUpdate
+        .enter()
+        .append('rect')
+        .classed('time-duration', true)
+        .style('stroke', options.lineColor)
+        .attr(fieldAxis, d => options.offsetFn(d))
+        .attr(oppositeFieldAxis, d => timePos(d) + options.offsetTangentFn(d))
+        .attr('width', 1)
+        .attr('height', d => endTimePos(d) - timePos(d));
+
+      sUpdate
+        .transition()
+        .style('stroke', options.lineColor)
+        .attr(fieldAxis, d => options.offsetFn(d))
+        .attr(oppositeFieldAxis, d => timePos(d) + options.offsetTangentFn(d))
+        .attr('width', 1)
+        .attr('height', d => endTimePos(d) - timePos(d));
+    }
 
     sUpdate.exit().remove();
 
@@ -182,31 +276,33 @@ class Timeline extends SvgChart {
   drawLabels(nodes, labelTextStyle) {
     const options = this.options();
     let nodeHeight;
-    if(options.direction==='left' || options.direction==='right'){
+    if (options.direction === 'left' || options.direction === 'right') {
       nodeHeight = max(nodes, rectWidth);
-    }
-    else{
+    } else {
       nodeHeight = max(nodes, rectHeight);
     }
 
     const renderer = new labella.Renderer({
       nodeHeight,
       layerGap: options.layerGap,
-      direction: options.direction
+      direction: options.direction,
     });
 
     renderer.layout(nodes);
 
-    function nodePos(d){
-      switch(options.direction){
+    function nodePos(d) {
+      const offset = options.offsetFn(d.data);
+      const offsetTangent = options.offsetTangentFn(d.data) + options.textOffsetFn(d.data);
+
+      switch (options.direction) {
         case 'right':
-          return 'translate('+(d.x)+','+(d.y-d.dy/2)+')';
+          return `translate(${d.x + offset},${offsetTangent + d.y - d.dy / 2})`;
         case 'left':
-          return 'translate('+(d.x + nodeHeight - d.w)+','+(d.y-d.dy/2)+')';
+          return `translate(${d.x + nodeHeight - d.w - offset},${offsetTangent + d.y - d.dy / 2})`;
         case 'up':
-          return 'translate('+(d.x-d.dx/2)+','+(d.y)+')';
+          return `translate(${offsetTangent + d.x - d.dx / 2},${d.y + offset})`;
         case 'down':
-          return 'translate('+(d.x-d.dx/2)+','+(d.y)+')';
+          return `translate(${offsetTangent + d.x - d.dx / 2},${d.y - offset})`;
       }
     }
 
@@ -214,10 +310,14 @@ class Timeline extends SvgChart {
     const linkColor = helper.functor(options.linkColor);
 
     // Draw label rectangles
-    const selection = this.layers.get('main/label').selectAll('g.label-g')
+    const selection = this.layers
+      .get('main/label')
+      .selectAll('g.label-g')
       .data(nodes, options.keyFn ? d => options.keyFn(d.data) : undefined);
 
-    const sEnter = selection.enter().append('g')
+    const sEnter = selection
+      .enter()
+      .append('g')
       .classed('label-g', true)
       .on('click', this.dispatchAs('labelClick'))
       .on('mouseover', this.dispatchAs('labelMouseover'))
@@ -236,36 +336,57 @@ class Timeline extends SvgChart {
       .attr('height', rectHeight)
       .style('fill', d => labelBgColor(d.data));
 
-    sEnter.append('text')
+    sEnter
+      .append('text')
       .classed('label-text', true)
       .call(this.updateLabelText, labelTextStyle, d => d.data);
 
-    const sTrans = selection.transition()
-      .attr('transform', nodePos);
+    const sTrans = selection.transition().attr('transform', nodePos);
 
-    sTrans.select('rect')
+    sTrans
+      .select('rect')
       .attr('width', rectWidth)
       .attr('height', rectHeight)
       .style('fill', d => labelBgColor(d.data));
 
-    sTrans.select('text.label-text')
-      .call(this.updateLabelText, labelTextStyle, d => d.data);
+    sTrans.select('text.label-text').call(this.updateLabelText, labelTextStyle, d => d.data);
 
     selection.exit().remove();
 
     // Draw path from point on the timeline to the label rectangle
-    const paths = this.layers.get('main/link').selectAll('path.link')
+    const paths = this.layers
+      .get('main/link')
+      .selectAll('path.link')
       .data(nodes, options.keyFn ? d => options.keyFn(d.data) : undefined);
 
-    paths.enter().append('path')
+    paths
+      .enter()
+      .append('path')
       .classed('link', true)
       .attr('d', d => renderer.generatePath(d))
       .style('stroke', d => linkColor(d.data))
-      .style('fill', 'none');
+      .style('fill', 'none')
+      .attr('transform', (d) => {
+        const offset = options.offsetFn(d.data);
+        const offsetTangent = options.offsetTangentFn(d.data);
+        if (options.direction === 'left' || options.direction === 'right') {
+          return `translate(${offset}, ${offsetTangent})`;
+        }
+        return `translate(${offsetTangent}, ${offset})`;
+      });
 
-    paths.transition()
+    paths
+      .transition()
       .attr('d', d => renderer.generatePath(d))
-      .style('stroke', d => linkColor(d.data));
+      .style('stroke', d => linkColor(d.data))
+      .attr('transform', (d) => {
+        const offset = options.offsetFn(d.data);
+        const offsetTangent = options.offsetTangentFn(d.data);
+        if (options.direction === 'left' || options.direction === 'right') {
+          return `translate(${offset}, ${offsetTangent})`;
+        }
+        return `translate(${offsetTangent}, ${offset})`;
+      });
 
     paths.exit().remove();
 
@@ -279,31 +400,32 @@ class Timeline extends SvgChart {
     const options = this.options();
     this.force = new labella.Force(options.labella);
 
-    if(options.domain){
+    if (options.domain) {
       options.scale.domain(options.domain);
+    } else {
+      options.scale.domain(extent(data, options.timeFn)).nice();
     }
-    else{
-      options.scale
-        .domain(extent(data, options.timeFn))
-        .nice();
-    }
-    options.scale.range([0, (options.direction==='left' || options.direction==='right')
-      ? this.getInnerHeight()
-      : this.getInnerWidth()]
-    );
+    options.scale.range([
+      0,
+      options.direction === 'left' || options.direction === 'right'
+        ? this.getInnerHeight()
+        : this.getInnerWidth(),
+    ]);
 
     const labelTextStyle = helper.extend({}, options.textStyle);
-    Object.keys(labelTextStyle).forEach(key => {
+    Object.keys(labelTextStyle).forEach((key) => {
       labelTextStyle[key] = helper.functor(labelTextStyle[key]);
     });
     // for backward compatibility
     labelTextStyle.fill = labelTextStyle.fill || helper.functor(options.labelTextColor);
 
-    const dummyText = this.layers.get('dummy').append('text')
+    const dummyText = this.layers
+      .get('dummy')
+      .append('text')
       .classed('label-text', true);
 
     const timePos = d => options.scale(options.timeFn(d));
-    const nodes = data.map(d => {
+    const nodes = data.map((d) => {
       const bbox = dummyText
         .call(this.updateLabelText, labelTextStyle, d)
         .node()
@@ -312,8 +434,8 @@ class Timeline extends SvgChart {
       const h = bbox.height + options.labelPadding.top + options.labelPadding.bottom;
       const node = new labella.Node(
         timePos(d),
-        (options.direction==='left' || options.direction==='right') ? h : w,
-        d
+        options.direction === 'left' || options.direction === 'right' ? h : w,
+        d,
       );
       node.w = w;
       node.h = h;
@@ -322,10 +444,12 @@ class Timeline extends SvgChart {
 
     dummyText.remove();
 
-    this.force.options(options.labella)
+    this.force
+      .options(options.labella)
       .nodes(nodes)
       .compute();
 
+    console.log(nodes);
     this.drawAxes();
     this.drawDots(data);
     this.drawLabels(this.force.nodes(), labelTextStyle);
