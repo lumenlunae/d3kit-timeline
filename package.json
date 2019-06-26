@@ -22,9 +22,13 @@
     "labella": "^1.1.4"
   },
   "devDependencies": {
+    "babel-loader": "^7.1.5",
     "gh-pages": "^1.0.0",
     "lazynerd-devtools": "^1.0.1",
-    "pkgfiles": "^2.3.0"
+    "pkgfiles": "^2.3.0",
+    "webpack": "^4.35.0",
+    "webpack-cli": "^3.3.4",
+    "webpack-merge": "^4.2.1"
   },
   "scripts": {
     "dev": "./node_modules/lazynerd-devtools/dev --config webpack.config.examples.js",
