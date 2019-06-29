@@ -1,5 +1,6 @@
 import { axisLeft, axisRight, axisBottom, axisTop } from 'd3-axis';
 import { scaleTime } from 'd3-scale';
+import { drag } from 'd3-drag';
 import 'd3-transition';
 import { max, extent } from 'd3-array';
 import { SvgChart, helper } from 'd3kit';
@@ -21,10 +22,11 @@ class Timeline extends SvgChart {
       dotRadius: 3,
       formatAxis: identity,
       layerGap: 60,
+      layerGapFn: undefined,
       labella: {},
       keyFn: undefined,
       timeFn: d => d.time,
-      endTimeFn: d => d.end_time,
+      endTimeFn: d => d.endTime,
       textFn: d => d.text,
       offsetFn: d => d.offset,
       offsetTangentFn: d => d.offsetTangent,
@@ -54,13 +56,16 @@ class Timeline extends SvgChart {
       'labelMouseenter',
       'labelMouseleave',
       'labelMouseout',
+      'labelDrag',
+      'labelDragStart',
+      'labelDragEnd',
     ];
   }
 
   constructor(element, options) {
     super(element, options);
 
-    this.layers.create(['dummy', { main: ['axis', 'link', 'label', 'dot'] }]);
+    this.layers.create(['dummy', { main: ['axis', 'link', 'dot', 'label'] }]);
     this.layers.get('main/axis').classed('axis', true);
 
     this.force = new labella.Force(options.labella);
@@ -68,7 +73,7 @@ class Timeline extends SvgChart {
     this.updateLabelText = this.updateLabelText.bind(this);
     this.visualize = this.visualize.bind(this);
     this.on('data', this.visualize);
-    this.on('options', this.visualize);
+    // this.on('options', this.visualize);
     this.on('resize', this.visualize);
   }
 
@@ -285,6 +290,7 @@ class Timeline extends SvgChart {
     const renderer = new labella.Renderer({
       nodeHeight,
       layerGap: options.layerGap,
+      layerGapFn: options.layerGapFn,
       direction: options.direction,
     });
 
@@ -319,13 +325,13 @@ class Timeline extends SvgChart {
       .enter()
       .append('g')
       .classed('label-g', true)
-      .on('click', this.dispatchAs('labelClick'))
-      .on('mouseover', this.dispatchAs('labelMouseover'))
-      .on('mousemove', this.dispatchAs('labelMousemove'))
-      .on('mouseenter', this.dispatchAs('labelMouseenter'))
-      .on('mouseleave', this.dispatchAs('labelMouseleave'))
-      .on('mouseout', this.dispatchAs('labelMouseout'))
-      .attr('transform', nodePos);
+      .attr('transform', nodePos)
+      .call(
+        drag()
+          .on('start', this.dispatchAs('labelDragStart'))
+          .on('end', this.dispatchAs('labelDragEnd'))
+          .on('drag', this.dispatchAs('labelDrag')),
+      );
 
     sEnter
       .append('rect')
@@ -353,6 +359,81 @@ class Timeline extends SvgChart {
 
     selection.exit().remove();
 
+    return this;
+  }
+
+  drawLink(node) {
+    const options = this.options();
+    let nodeHeight;
+    if (options.direction === 'left' || options.direction === 'right') {
+      nodeHeight = max(node, rectWidth);
+    } else {
+      nodeHeight = max(node, rectHeight);
+    }
+
+    const renderer = new labella.Renderer({
+      nodeHeight,
+      layerGap: options.layerGap,
+      layerGapFn: options.layerGapFn,
+      direction: options.direction,
+    });
+    // renderer.layout([node]);
+    const linkColor = options.linkColor;
+    // Draw path from point on the timeline to the label rectangle
+    const paths = this.layers
+      .get('main/link')
+      .selectAll('path.link')
+      .data(node, options.keyFn ? d => options.keyFn(d.data) : undefined);
+
+    paths
+      .enter()
+      .append('path')
+      .classed('link', true)
+      .attr('d', d => renderer.generatePath(d))
+      .style('stroke', d => linkColor(d.data))
+      .style('fill', 'none')
+      .attr('transform', (d) => {
+        const offset = options.offsetFn(d.data);
+        const offsetTangent = options.offsetTangentFn(d.data);
+        if (options.direction === 'left' || options.direction === 'right') {
+          return `translate(${offset}, ${offsetTangent})`;
+        }
+        return `translate(${offsetTangent}, ${offset})`;
+      });
+
+    paths
+      .transition()
+      .attr('d', d => renderer.generatePath(d))
+      .style('stroke', d => linkColor(d.data))
+      .attr('transform', (d) => {
+        const offset = options.offsetFn(d.data);
+        const offsetTangent = options.offsetTangentFn(d.data);
+        if (options.direction === 'left' || options.direction === 'right') {
+          return `translate(${offset}, ${offsetTangent})`;
+        }
+        return `translate(${offsetTangent}, ${offset})`;
+      });
+
+    paths.exit().remove();
+  }
+
+  drawLinks(nodes) {
+    const options = this.options();
+    let nodeHeight;
+    if (options.direction === 'left' || options.direction === 'right') {
+      nodeHeight = max(nodes, rectWidth);
+    } else {
+      nodeHeight = max(nodes, rectHeight);
+    }
+
+    const renderer = new labella.Renderer({
+      nodeHeight,
+      layerGap: options.layerGap,
+      layerGapFn: options.layerGapFn,
+      direction: options.direction,
+    });
+    renderer.layout(nodes);
+    const linkColor = helper.functor(options.linkColor);
     // Draw path from point on the timeline to the label rectangle
     const paths = this.layers
       .get('main/link')
@@ -389,8 +470,6 @@ class Timeline extends SvgChart {
       });
 
     paths.exit().remove();
-
-    return this;
   }
 
   visualize() {
@@ -449,10 +528,11 @@ class Timeline extends SvgChart {
       .nodes(nodes)
       .compute();
 
-    console.log(nodes);
+    // console.log(nodes);
     this.drawAxes();
     this.drawDots(data);
     this.drawLabels(this.force.nodes(), labelTextStyle);
+    this.drawLinks(this.force.nodes());
 
     return this;
   }
